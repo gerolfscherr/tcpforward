@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -10,23 +11,35 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
+#include <limits.h>
 #include "../simpledns/hex.h"
 
 
 int my_verbose = 0;
 static struct sockaddr_in my_dst_addr; //, *my_pdst_addr = NULL;
 static char* my_targethost = NULL;
-static char* my_logprefix = NULL;
+static char* my_dumppath = NULL;
 
-#if 0
-int write(char*data, char*tag, size_t len) {
-//	time_t now
-	char fn[MAX_PATH];
-	snprintf(fn,MAX_PATH, "%s-%s-", my_logprefix, );
-	//FILE*f = 
+time_t my_oldtime;
+int my_oldtimenr;
 
+int dowrite(const char*data,  size_t len, char*tag1, char*tag2) {
+	char fn[PATH_MAX];
+	snprintf(fn,PATH_MAX, "%s/%s-%s", my_dumppath, tag1, tag2);
+	FILE*f = fopen(fn, "w");
+	if (!f) {
+		perror(fn);
+		return -1;
+	}
+	printf("log:%s, len:%ld\n", fn, len);
+	size_t w= fwrite(data, len, 1, f);
+	if (len != w) {
+		printf("len %ld != w: %ld\n", len, w);
+	}
+	fclose(f);
+	return w;
 }
-#endif
+
 
 int  process(char*data, ssize_t len, struct sockaddr_in* src_addr, socklen_t src_addr_len) {
 	printf("process:%ld\n", len);
@@ -61,6 +74,32 @@ int forward(const char*buf, int len, char*retbuf, int retbuf_sz) {
 	close(sock);
 	return res;
 }
+
+
+
+int log_forward(const char* buf, int len, char* retbuf, int retbuf_maxsz) {
+
+	#define TS_SZ 64
+	char ts[TS_SZ];	
+	time_t now = time(NULL);
+	if (now == my_oldtime) {
+		my_oldtimenr++;
+	} else {
+		my_oldtimenr=0;
+		my_oldtime = now;
+	}
+	snprintf(ts, TS_SZ, "%ld-%d", my_oldtime, my_oldtimenr);
+
+
+	dowrite(buf, len, "req", ts);	
+
+	int r = forward(buf, len, retbuf, retbuf_maxsz);
+	if (r > -1) {
+		dowrite(retbuf, r, "res", ts);
+	}
+	return r;
+}
+
 
 
 
@@ -123,8 +162,10 @@ int start(struct in_addr * bind_addr, int port) {
 			goto start_closesock;
 		}
 		//print_hex_dump(buf, len);
+		len = my_dumppath? log_forward(buf, len, retbuf, BUF_SZ) : forward(buf, len, retbuf, BUF_SZ);
 
-		len = forward(buf, len, retbuf, BUF_SZ);
+
+//		len = forward(buf, len, retbuf, BUF_SZ);
 		print_hex_dump(retbuf, len);
 		if (len < 0) {
 			printf("error in forward:%ld\n", len);
@@ -199,8 +240,8 @@ int main(int argc, char** argv) {
 			case 'v' : my_verbose = 1; break;
 			case 'l' :
 				l = strlen(optarg);
-				my_logprefix = alloca(l+1);
-				memcpy(my_logprefix, optarg, l+1);	
+				my_dumppath = alloca(l+1);
+				memcpy(my_dumppath, optarg, l+1);	
 		}
 
 	}
@@ -210,7 +251,7 @@ int main(int argc, char** argv) {
 		printf("port:\t\t%d\n", port);
 		printf("target:\t\t%s\n", my_targethost);
 		printf("targetport:\t%d\n", my_targetport);
-		printf("logprefix:\t%s\n", my_logprefix);
+		printf("dumppath:\t%s\n", my_dumppath);
 	}
 
 
