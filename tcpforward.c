@@ -24,6 +24,7 @@ time_t my_oldtime;
 int my_oldtimenr;
 
 int dowrite(const char*data,  size_t len, char*tag1, char*tag2) {
+	printf("dowrite: %ld %s %s\n", len, tag1,tag2);
 	char fn[PATH_MAX];
 	snprintf(fn,PATH_MAX, "%s/%s-%s", my_dumppath, tag1, tag2);
 	FILE*f = fopen(fn, "w");
@@ -37,6 +38,7 @@ int dowrite(const char*data,  size_t len, char*tag1, char*tag2) {
 		printf("len %ld != w: %ld\n", len, w);
 	}
 	fclose(f);
+	printf("dowrite:returning%ld\n", w);
 	return w;
 }
 
@@ -166,11 +168,13 @@ int start(struct in_addr * bind_addr, int port) {
 
 
 //		len = forward(buf, len, retbuf, BUF_SZ);
-		print_hex_dump(retbuf, len);
 		if (len < 0) {
 			printf("error in forward:%ld\n", len);
 			goto start_closesock;
 		}
+
+		print_hex_dump(retbuf, len > 100 ? 100:len);
+	
 		printf("sending back: %ld\n", len);
 		int retlen = send(fd, retbuf, len, 0);
 		printf("sent back: %d\n", retlen);
